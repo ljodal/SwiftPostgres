@@ -48,14 +48,14 @@ class PGConnection: QueryExecutor {
         }
 
         // Get the underlaying socket for the postgres connection
-        let fd = UInt(PQsocket(connection))
+        let fd = PQsocket(connection)
         guard fd >= 0 else {
             let msg = String.fromCString(PQerrorMessage(connection))
             throw PGError.Other(message: msg != nil ? msg! : "Failed to get socket")
         }
 
         self.queue = dispatch_queue_create(queueLabel, DISPATCH_QUEUE_SERIAL)
-        self.source = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, fd, 0, self.queue)
+        self.source = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, UInt(fd), 0, self.queue)
 
         // Set event handlers on the dispatch source
         dispatch_source_set_event_handler(self.source, self.handleEvent)
