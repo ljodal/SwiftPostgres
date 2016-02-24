@@ -101,6 +101,17 @@ class PGConnection: QueryExecutor {
 
         print("Handle event")
 
+        // Make sure all available data is consumed
+        guard PQconsumeInput(connection) == 1 else {
+            let msg = String.fromCString(PQerrorMessage(connection))
+            if msg != nil {
+                print(msg)
+            } else {
+                print("Consume input failed")
+            }
+            return
+        }
+
         while true {
             // Check that enough data is available for us to read
             guard PQisBusy(connection) == 1 else {
