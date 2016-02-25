@@ -9,7 +9,7 @@ import CLibpq
 
 let queueLabel = "com.ljodal.pgconnection"
 
-enum PGError: ErrorType {
+public enum PGError: ErrorType {
     case ConnectionError(message: String)
     case Other(message: String)
 }
@@ -17,14 +17,17 @@ enum PGError: ErrorType {
 /// This class represents a single connection to a database. One connection
 /// can only execute a single query at a time, so if more than one query is
 /// submited, they will be queued and executed in the order they are given.
-class PGConnection: QueryExecutor {
+public class PGConnection: QueryExecutor {
 
     let source: dispatch_source_t
     let queue: dispatch_queue_t
 
     private let connection: COpaquePointer
 
+    /// Get the latest error message from libpq
     private var pgError: String? {
+        // Get the postgres connection and return a String. This will copy
+        // the string, so we do not need to worry about managing the memory
         return String.fromCString(PQerrorMessage(connection))
     }
 
@@ -33,6 +36,8 @@ class PGConnection: QueryExecutor {
 
     init(host: String, port: UInt16, database: String) throws {
 
+        // Open a connection to the database
+        // TODO: Do this asynchronously
         connection = PQconnectdb("postgresql://\(host):\(port)/\(database)")
 
         // Make sure we are connectied
@@ -82,15 +87,7 @@ class PGConnection: QueryExecutor {
     ///
     /// If the executor is not able to process the query at this moment,
     /// the onFailure callback should be called immediately.
-    func execute(query: Query, onSuccess: (Result) -> (), onFailure: (ErrorType) -> ()) {
-    }
-
-    /// Execute the given query and call the callback methods when
-    /// each row of the result is ready.
-    ///
-    /// If the executor is not able to process the query at this moment,
-    /// the onFailure callback should be called immediately.
-    func execute(query: Query, onSuccess: (Row) -> (), onFailure: (ErrorType) -> ()) {
+    public func execute<R : Result>(query: Query, onSuccess: (R) -> (), onFailure: (ErrorType) -> ()) {
     }
 
     /// This function is called by GCD whenever we can read
@@ -112,14 +109,14 @@ class PGConnection: QueryExecutor {
             return
         }
 
+
+        // Check that enough data is available for us to read
+        guard PQisBusy(connection) == 0 else {
+            print("PQ is busy")
+            return
+        }
+
         while true {
-            // Check that enough data is available for us to read
-            guard PQisBusy(connection) == 1 else {
-                print("PQ is busy")
-                return
-            }
-
-
             let result = PQgetResult(connection)
             guard result != nil else {
                 print("Null-result")
