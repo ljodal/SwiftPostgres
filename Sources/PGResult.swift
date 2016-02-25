@@ -1,5 +1,19 @@
 import CLibpq
 
+// Byte order swapping
+import CoreFoundation
+
+private func ntoh(int: Int16) -> Int16 {
+    return Int16(bitPattern: CFSwapInt16BigToHost(UInt16(bitPattern: int)))
+}
+
+private func ntoh(int: Int32) -> Int32 {
+    return Int32(bitPattern: CFSwapInt32BigToHost(UInt32(bitPattern: int)))
+}
+
+private func ntoh(int: Int64) -> Int64 {
+    return Int64(bitPattern: CFSwapInt64BigToHost(UInt64(bitPattern: int)))
+}
 
 public class PGRow {
     private let result: PGResult
@@ -13,38 +27,89 @@ public class PGRow {
     }
 }
 
+
 extension PGRow : Row {
 
     public var columns: [String] {
         return self.result.columnNames
     }
 
-    public subscript(index: Int) -> Any? {
-        return nil
+    public subscript(index: Int) -> String? {
+        let value: RawData = self[index]
+
+        switch (value) {
+        case let .Text(data):
+            return data
+        case let .Binary(data, size):
+            return String.fromCString(data)
+        default:
+            fatalError("Unable to decode value")
+        }
     }
 
-    public subscript(name: String) -> Any? {
-        let index = name.withCString { str in
-            PQfnumber(self.result.result, str)
+    public subscript(index: Int) -> Int? {
+        let value: RawData = self[index]
+
+        switch (value) {
+        case .Nil:
+            return nil
+        case let .Text(data):
+            return Int(data, radix: 10)
+        case let .Binary(data, size):
+            switch (size) {
+            case 2:
+                return Int(ntoh(UnsafeMutablePointer<Int16>(data)[0]))
+            case 4:
+                return Int(ntoh(UnsafeMutablePointer<Int32>(data)[0]))
+            case 8:
+                return Int(ntoh(UnsafeMutablePointer<Int64>(data)[0]))
+            default:
+                fatalError("Unsupported integer size: \(size)")
+            }
+        }
+    }
+
+    public subscript(index: Int) -> Int {
+        let value: RawData = self[index]
+
+        switch (value) {
+        case let .Text(data):
+            return Int(data, radix: 10)!
+        case let .Binary(data, size):
+            switch (size) {
+            case 2:
+                return Int(ntoh(UnsafeMutablePointer<Int16>(data)[0]))
+            case 4:
+                return Int(ntoh(UnsafeMutablePointer<Int32>(data)[0]))
+            case 8:
+                return Int(ntoh(UnsafeMutablePointer<Int64>(data)[0]))
+            default:
+                fatalError("Unsupported integer size: \(size)")
+            }
+        case .Nil:
+            fatalError("Value is nil")
+        }
+    }
+
+    public subscript(index: Int) -> RawData {
+
+        let format = PQfformat(result.result, Int32(index))
+        let value = PQgetvalue(result.result, Int32(self.index), Int32(index))
+        let size = PQgetlength(result.result, Int32(self.index), Int32(index))
+        let null = PQgetisnull(result.result, Int32(self.index), Int32(index))
+
+        guard null == 0 else {
+            return RawData.Nil()
         }
 
-        guard index >= 0 else {
-            fatalError("Unknown column: \(name)")
+        switch (format) {
+        case 0: // Text
+            return RawData.Text(data: String.fromCString(value)!)
+        case 1: // Binary
+            return RawData.Binary(data: value, size: Int(size))
+        default:
+            fatalError("Unsupported data format")
         }
-
-        return nil
-    }
-
-    public func generate() -> IndexingGenerator<PGRow> {
-        return IndexingGenerator(self)
-    }
-
-    public var startIndex: Int {
-        return 0
-    }
-
-    public var endIndex: Int {
-        return count
     }
 }
 
@@ -56,7 +121,7 @@ public class PGResult {
     public lazy var count: Int =  Int(PQntuples(self.result))
     public lazy var columnNames: [String] = self.getColumnNames()
 
-    init(result: COpaquePointer) {
+    init(_ result: COpaquePointer) {
         self.result = result
     }
 

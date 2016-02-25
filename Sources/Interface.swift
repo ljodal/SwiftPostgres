@@ -13,19 +13,23 @@ public protocol Query {
     var sql: String { get }
 }
 
+
+public enum RawData {
+    case Binary(data: UnsafePointer<Int8>, size: Int)
+    case Text(data: String)
+    case Nil()
+}
+
 ///
 /// One row of a result set
 ///
-public protocol Row : CollectionType {
-
-    associatedtype Element = Any?
-    associatedtype Index = Int
+public protocol Row {
 
     /// Name of the columns
     var columns: [String] { get }
 
     /// Get the value at the column with the given name
-    subscript(name: String) -> Any? { get }
+    //subscript(name: String) -> T { get }
 }
 
 ///
@@ -48,12 +52,15 @@ public protocol Result : CollectionType {
 /// executed in the order they are supplied.
 public protocol QueryExecutor {
 
+    // The type of result returned by this query executor
+    associatedtype R = Result
+
     /// Execute the given query and call the callback methods when
     /// a result is ready
     ///
     /// If the executor is not able to process the query at this moment,
     /// the onFailure callback should be called immediately.
-    func execute<R : Result>(query: Query, onSuccess: (R) -> (), onFailure: (ErrorType) -> ())
+    func execute(query: Query, onSuccess: (R) -> (), onFailure: (ErrorType) -> ())
 
     /// Execute the given query and call the callback methods when
     /// each row of the result is ready.

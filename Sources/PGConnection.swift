@@ -24,15 +24,18 @@ public class PGConnection: QueryExecutor {
 
     private let connection: COpaquePointer
 
+    // The queue of queries to be executed
+    private var queries: [(query: Query, onSuccess: (PGResult) -> (), onFailure: (ErrorType) -> ())] = []
+
+    // If a query is currently being executed
+    private var working = false
+
     /// Get the latest error message from libpq
     private var pgError: String? {
         // Get the postgres connection and return a String. This will copy
         // the string, so we do not need to worry about managing the memory
         return String.fromCString(PQerrorMessage(connection))
     }
-
-    // The queue of queries to be executed
-    //private let queries: [(query: Query, onSuccess: (Result) -> (), onError: (ErrorType) -> ())]
 
     init(host: String, port: UInt16, database: String) throws {
 
@@ -72,13 +75,6 @@ public class PGConnection: QueryExecutor {
 
         })
         dispatch_resume(self.source)
-
-        // Try to send a query
-        let status1 = PQsendQuery(connection, "SELECT * FROM test")
-        guard status1 == 1 else {
-            let msg = String.fromCString(PQerrorMessage(connection))
-            throw PGError.Other(message: msg != nil ? msg! : "Failed to send query")
-        }
     }
 
 
@@ -87,7 +83,46 @@ public class PGConnection: QueryExecutor {
     ///
     /// If the executor is not able to process the query at this moment,
     /// the onFailure callback should be called immediately.
-    public func execute<R : Result>(query: Query, onSuccess: (R) -> (), onFailure: (ErrorType) -> ()) {
+    public func execute(query: Query, onSuccess: (PGResult) -> (), onFailure: (ErrorType) -> ()) {
+
+        // Add the query to the queue
+        dispatch_async(self.queue, {
+            self.queries.insert((query: query, onSuccess: onSuccess, onFailure: onFailure), atIndex: 0)
+            self.sendQuery()
+        })
+
+    }
+
+    private func sendQuery() {
+
+        // Only send query if we are not currently executing a query
+        guard !self.working else {
+            print("Currently executing a query")
+            return
+        }
+
+        // Ensure that a query is queued
+        guard let q = queries.last else {
+            print("No queries to execute")
+            return
+        }
+
+        print("Sending query")
+
+        // Try to send a query
+        let status = PQsendQueryParams(connection, q.query.sql, 0, nil, nil, nil, nil, 1)
+        print("Sent query: \(status)")
+        guard status != 1 else {
+            self.working = true
+            return
+        }
+
+        // Failed to start query, send error message
+        let msg = String.fromCString(PQerrorMessage(connection))
+        q.onFailure(PGError.Other(message: msg != nil ? msg! : "Failed to send query"))
+
+        // Try next query
+        self.sendQuery()
     }
 
     /// This function is called by GCD whenever we can read
@@ -120,13 +155,13 @@ public class PGConnection: QueryExecutor {
             let result = PQgetResult(connection)
             guard result != nil else {
                 print("Null-result")
+                self.queries.popLast()
+                self.working = false
+                self.sendQuery()
                 return
             }
 
-            let rows = PQntuples(result)
-
-
-            print("Got a result: \(rows) rows")
+            self.queries.last!.onSuccess(PGResult(result))
         }
 
         // TODO: Check if we can read data from the postgresql connection
