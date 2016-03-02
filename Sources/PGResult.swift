@@ -3,6 +3,19 @@ import CLibpq
 // Byte order swapping
 import CoreFoundation
 
+private func ntoh(oid: Oid) -> Oid {
+    switch sizeof(Oid) {
+    case 2:
+        return Oid(ntoh(Int16(oid)))
+    case 4:
+        return Oid(ntoh(Int32(oid)))
+    case 8:
+        return Oid(ntoh(Int64(oid)))
+    default:
+        fatalError("Unsupported oid size: \(sizeof(Oid))")
+    }
+}
+
 private func ntoh(int: Int16) -> Int16 {
     return Int16(bitPattern: CFSwapInt16BigToHost(UInt16(bitPattern: int)))
 }
@@ -13,6 +26,55 @@ private func ntoh(int: Int32) -> Int32 {
 
 private func ntoh(int: Int64) -> Int64 {
     return Int64(bitPattern: CFSwapInt64BigToHost(UInt64(bitPattern: int)))
+}
+
+private func popcount(num: Int32) -> Int32 {
+    var i = num
+    i = i - ((i >> 1) & 0x55555555);
+    i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
+    return (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
+}
+
+private func decodeArray(data: UnsafePointer<Int8>, _ size: Int) -> [Int?] {
+
+    let dim = Int(ntoh(UnsafePointer<Int32>(data)[0]))
+    let offset = Int(ntoh(UnsafePointer<Int32>(data.advancedBy(4))[0]))
+    let oid = Int(ntoh(UnsafePointer<Oid>(data.advancedBy(8))[0]))
+    let elems = Int(ntoh(UnsafePointer<Int32>(data.advancedBy(8 + sizeof(Oid)))[0]))
+    let index = Int(ntoh(UnsafePointer<Int32>(data.advancedBy(12 + sizeof(Oid)))[0]))
+
+    // TODO: Is the bitmap not included?
+    //let nulls = ntoh(UnsafePointer<Int32>(data.advancedBy(16 + sizeof(Oid)))[0])
+    //let items = UnsafePointer<Int32>(data.advancedBy(16 + sizeof(Oid) + offset * 4))
+
+
+    print("Data size: \(size)")
+    print("Dimmentions: \(dim)")
+    print("Offset: \(offset)")
+    print("Oid: \(oid)")
+    print("Size: \(elems)")
+    print("Index: \(index)")
+
+    // Offset in bytes from start of data structure to the current element
+    var i = 16 + sizeof(Oid)
+
+    var result: [Int?] = []
+
+    while i < size {
+        let ptr = UnsafePointer<Int32>(data.advancedBy(i))
+        let itemSize = ntoh(ptr[0])
+
+        // If size if -1, this value is null
+        if itemSize == -1 {
+            result.append(nil)
+            i += 4
+        } else {
+            result.append(Int(ntoh(ptr[1])))
+            i += 4 + Int(itemSize)
+        }
+    }
+
+    return result
 }
 
 public class PGRow {
@@ -58,11 +120,11 @@ extension PGRow : Row {
         case let .Binary(data, size):
             switch (size) {
             case 2:
-                return Int(ntoh(UnsafeMutablePointer<Int16>(data)[0]))
+                return Int(ntoh(UnsafePointer<Int16>(data)[0]))
             case 4:
-                return Int(ntoh(UnsafeMutablePointer<Int32>(data)[0]))
+                return Int(ntoh(UnsafePointer<Int32>(data)[0]))
             case 8:
-                return Int(ntoh(UnsafeMutablePointer<Int64>(data)[0]))
+                return Int(ntoh(UnsafePointer<Int64>(data)[0]))
             default:
                 fatalError("Unsupported integer size: \(size)")
             }
@@ -78,16 +140,27 @@ extension PGRow : Row {
         case let .Binary(data, size):
             switch (size) {
             case 2:
-                return Int(ntoh(UnsafeMutablePointer<Int16>(data)[0]))
+                return Int(ntoh(UnsafePointer<Int16>(data)[0]))
             case 4:
-                return Int(ntoh(UnsafeMutablePointer<Int32>(data)[0]))
+                return Int(ntoh(UnsafePointer<Int32>(data)[0]))
             case 8:
-                return Int(ntoh(UnsafeMutablePointer<Int64>(data)[0]))
+                return Int(ntoh(UnsafePointer<Int64>(data)[0]))
             default:
                 fatalError("Unsupported integer size: \(size)")
             }
         case .Nil:
             fatalError("Value is nil")
+        }
+    }
+
+    public subscript(index: Int) -> [Int?] {
+        let value: RawData = self[index]
+
+        switch value {
+        case let .Binary(data, size):
+            return decodeArray(data, size)
+        default:
+            fatalError("Not binary")
         }
     }
 
