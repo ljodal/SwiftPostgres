@@ -191,6 +191,7 @@ public class PGResult {
 
     private let result: COpaquePointer
 
+    public lazy var columns: Int = Int(PQnfields(self.result))
     public lazy var count: Int =  Int(PQntuples(self.result))
     public lazy var columnNames: [String] = self.getColumnNames()
 
@@ -210,6 +211,16 @@ public class PGResult {
 
             return name!
         }
+    }
+
+    /// Get the PG Oid of the column at the given index
+    public func oid(index: Int) throws -> Oid {
+
+        guard 0..<columns ~= index else {
+            throw PGError.Other(message: "Column \(index) is out of range: 0..<\(columns)")
+        }
+
+        return PQftype(self.result, Int32(index))
     }
 
     deinit {

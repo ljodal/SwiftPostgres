@@ -75,7 +75,21 @@ connection.execute(Q("SELECT 'HELLO FROM POSTGRES'::varchar"), onSuccess: { resu
 })
 */
 
-connection.execute(Q("SELECT '{0,1,2,3,4,3,2,1}'::int[]"), onSuccess: { result in
+let query = (0..<100).map({return "\($0),NULL"}).joinWithSeparator(",");
+connection.execute(Q("SELECT '{\(query)}'::int[]"), onSuccess: { result in
+
+    print("Got a result of \(result.count) rows")
+
+    for row in result {
+        let a: [Int?] = row[0]
+        print("Array: \(a)")
+    }
+
+}, onFailure: { error in
+    print("Error: \(error)")
+})
+
+connection.execute(Q("SELECT '{{1,2},{2,3},{NULL,NULL}}'"), onSuccess: { result in
 
     print("Got a result of \(result.count) rows")
 
