@@ -161,6 +161,13 @@ public class PGConnection: QueryExecutor {
                 return
             }
 
+            let status = PQresultStatus(result)
+            guard status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK else {
+                let msg = pgError
+                queries.last!.onFailure(PGError.Other(message: msg != nil ? msg! : "Query failed"))
+                continue
+            }
+
             self.queries.last!.onSuccess(PGResult(result))
         }
 
