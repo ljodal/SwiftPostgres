@@ -55,6 +55,15 @@ public protocol QueryExecutor {
     // The type of result returned by this query executor
     associatedtype R = Result
 
+    /// Start a new transaction (or savepoint)
+    func begin(onSuccess: (Self) -> (), onFailure: (ErrorProtocol) -> ())
+
+    /// Commit the current transaction or release the current savepoint
+    func commit(onSuccess: (Self) -> (), onFailure: (ErrorProtocol) -> ())
+
+    /// Roll back the current transaction or savepoint
+    func rollback(onSuccess: (Self) -> (), onFailure: (ErrorProtocol) -> ())
+
     /// Execute the given query and call the callback methods when
     /// a result is ready
     ///

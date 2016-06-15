@@ -163,4 +163,55 @@ class ErrorHandling: XCTestCase {
             }
         }
     }
+
+    func testTransactionBeginAndRollback() {
+        let beginExpectation = expectation(withDescription: "Transaction started")
+        let query1Expectation = expectation(withDescription: "Create table completed")
+        let query2Expectation = expectation(withDescription: "Insert completed")
+        let query3Expectation = expectation(withDescription: "Select completed")
+        let rollbackExpectation = expectation(withDescription: "Transaction rolled back")
+
+        connection.begin(onSuccess: { result in
+            beginExpectation.fulfill()
+        }, onFailure: { error in
+            XCTFail("Begin failed: \(error)")
+            beginExpectation.fulfill()
+        })
+
+        connection.execute(Q("CREATE TABLE a (b int)"), onSuccess: { result in
+            query1Expectation.fulfill()
+        }, onFailure: { error in
+            XCTFail("Query failed: \(error)")
+            query1Expectation.fulfill()
+        })
+
+        connection.execute(Q("INSERT INTO a (b) VALUES (1)"), onSuccess: { result in
+            query2Expectation.fulfill()
+        }, onFailure: { error in
+            XCTFail("Query failed: \(error)")
+            query2Expectation.fulfill()
+        })
+
+        connection.execute(Q("SELECT * FROM a"), onSuccess: { result in
+            XCTAssertEqual(1, result.count, "Wrong number of rows")
+            XCTAssertEqual(1, result.columns, "Wrong number of columns")
+            query3Expectation.fulfill()
+        }, onFailure: { error in
+            XCTFail("Query failed: \(error)")
+            query3Expectation.fulfill()
+        })
+
+        connection.rollback(onSuccess: { result in
+            rollbackExpectation.fulfill()
+        }, onFailure: { error in
+            XCTFail("Rollback failed: \(error)")
+            rollbackExpectation.fulfill()
+        })
+
+        waitForExpectations(withTimeout: 10) { error in
+            if let error = error {
+                XCTFail(error.localizedDescription)
+            }
+        }
+    }
 }

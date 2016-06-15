@@ -18,7 +18,11 @@ public enum PGError: ErrorProtocol {
 /// This class represents a single connection to a database. One connection
 /// can only execute a single query at a time, so if more than one query is
 /// submited, they will be queued and executed in the order they are given.
-public class PGConnection: QueryExecutor {
+public final class PGConnection: QueryExecutor {
+
+    static let begin = PGQuery("BEGIN")
+    static let commit = PGQuery("ROLLBACK")
+    static let rollback = PGQuery("ROLLBACK")
 
     let source: DispatchSourceRead
     let queue: DispatchQueue
@@ -76,6 +80,33 @@ public class PGConnection: QueryExecutor {
 
         })
         self.source.resume()
+    }
+
+    public func begin(onSuccess: (PGConnection) -> (), onFailure: (ErrorProtocol) -> ()) {
+        self.queue.async {
+            self.queries.insert((query: PGConnection.begin, onSuccess: { result in
+                onSuccess(self)
+            }, onFailure: onFailure), at: 0)
+            self.sendQuery()
+        }
+    }
+
+    public func commit(onSuccess: (PGConnection) -> (), onFailure: (ErrorProtocol) -> ()) {
+        self.queue.async {
+            self.queries.insert((query: PGConnection.commit, onSuccess: { result in
+                onSuccess(self)
+            }, onFailure: onFailure), at: 0)
+            self.sendQuery()
+        }
+    }
+
+    public func rollback(onSuccess: (PGConnection) -> (), onFailure: (ErrorProtocol) -> ()) {
+        self.queue.async {
+            self.queries.insert((query: PGConnection.rollback, onSuccess: { result in
+                onSuccess(self)
+            }, onFailure: onFailure), at: 0)
+            self.sendQuery()
+        }
     }
 
 
