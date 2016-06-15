@@ -15,9 +15,9 @@ public protocol Query {
 
 
 public enum RawData {
-    case Binary(data: UnsafePointer<Int8>, size: Int)
-    case Text(data: String)
-    case Nil()
+    case binary(data: UnsafePointer<Int8>, size: Int)
+    case text(data: String)
+    case null()
 }
 
 ///
@@ -35,7 +35,7 @@ public protocol Row {
 ///
 /// The result of executing a Query.
 ///
-public protocol Result : CollectionType {
+public protocol Result : Collection {
 
     associatedtype Element = Row
     associatedtype Index = Int
@@ -60,7 +60,7 @@ public protocol QueryExecutor {
     ///
     /// If the executor is not able to process the query at this moment,
     /// the onFailure callback should be called immediately.
-    func execute(query: Query, onSuccess: (R) -> (), onFailure: (ErrorType) -> ())
+    func execute(_ query: Query, onSuccess: (R) -> (), onFailure: (ErrorProtocol) -> ())
 
     /// Execute the given query and call the callback methods when
     /// each row of the result is ready.

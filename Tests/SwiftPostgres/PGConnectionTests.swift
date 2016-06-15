@@ -4,10 +4,13 @@ import XCTest
 @testable import SwiftPostgres
 
 class ErrorHandling: XCTestCase {
-    let connection = try! PGConnection(host: "localhost", port: 5432, database: "test")
+    let connection = try! PGConnection(host: "localhost",
+                                       port: 5432,
+                                       database: "postgres",
+                                       username: "postgres")
 
     func testSelectSmallInt() {
-        let queryExpectation = expectationWithDescription("Query execution completed")
+        let queryExpectation = expectation(withDescription: "Query execution completed")
 
         connection.execute(Q("SELECT 1::smallint"), onSuccess: { result in
             // Assert that we got 1 row with 1 column
@@ -26,7 +29,7 @@ class ErrorHandling: XCTestCase {
             queryExpectation.fulfill()
         })
 
-        waitForExpectationsWithTimeout(10) { error in
+        waitForExpectations(withTimeout: 10) { error in
             if let error = error {
                 XCTFail(error.localizedDescription)
             }
@@ -34,7 +37,7 @@ class ErrorHandling: XCTestCase {
     }
 
     func testSelectInt() {
-        let queryExpectation = expectationWithDescription("Query execution completed")
+        let queryExpectation = expectation(withDescription: "Query execution completed")
 
         connection.execute(Q("SELECT 1::int"), onSuccess: { result in
             // Assert that we got 1 row with 1 column
@@ -53,7 +56,7 @@ class ErrorHandling: XCTestCase {
             queryExpectation.fulfill()
         })
 
-        waitForExpectationsWithTimeout(10) { error in
+        waitForExpectations(withTimeout: 10) { error in
             if let error = error {
                 XCTFail(error.localizedDescription)
             }
@@ -61,7 +64,7 @@ class ErrorHandling: XCTestCase {
     }
 
     func testSelectString() {
-        let queryExpectation = expectationWithDescription("Query execution completed")
+        let queryExpectation = expectation(withDescription: "Query execution completed")
 
         connection.execute(Q("SELECT 'test'::varchar"), onSuccess: { result in
             // Assert that we got 1 row with 1 column
@@ -80,7 +83,7 @@ class ErrorHandling: XCTestCase {
             queryExpectation.fulfill()
         })
 
-        waitForExpectationsWithTimeout(10) { error in
+        waitForExpectations(withTimeout: 10) { error in
             if let error = error {
                 XCTFail(error.localizedDescription)
             }
@@ -88,7 +91,7 @@ class ErrorHandling: XCTestCase {
     }
 
     func testSelectBigInt() {
-        let queryExpectation = expectationWithDescription("Query execution completed")
+        let queryExpectation = expectation(withDescription: "Query execution completed")
 
         connection.execute(Q("SELECT 1::bigint"), onSuccess: { result in
             // Assert that we got 1 row with 1 column
@@ -107,7 +110,7 @@ class ErrorHandling: XCTestCase {
             queryExpectation.fulfill()
         })
 
-        waitForExpectationsWithTimeout(10) { error in
+        waitForExpectations(withTimeout: 10) { error in
             if let error = error {
                 XCTFail(error.localizedDescription)
             }
@@ -115,7 +118,7 @@ class ErrorHandling: XCTestCase {
     }
 
     func testSelectMultiple() {
-        let queryExpectation = expectationWithDescription("Query execution completed")
+        let queryExpectation = expectation(withDescription: "Query execution completed")
 
         connection.execute(Q("SELECT * FROM generate_series(0, 10)"), onSuccess: { result in
 
@@ -137,7 +140,7 @@ class ErrorHandling: XCTestCase {
             queryExpectation.fulfill()
         })
 
-        waitForExpectationsWithTimeout(10) { error in
+        waitForExpectations(withTimeout: 10) { error in
             if let error = error {
                 XCTFail(error.localizedDescription)
             }
@@ -145,7 +148,7 @@ class ErrorHandling: XCTestCase {
     }
 
     func testInvalidQuery() {
-        let queryExpectation = expectationWithDescription("Query execution completed")
+        let queryExpectation = expectation(withDescription: "Query execution completed")
 
         connection.execute(Q("SELECT abc"), onSuccess: { result in
             XCTFail("Query succeeded, expected failure")
@@ -154,7 +157,7 @@ class ErrorHandling: XCTestCase {
             queryExpectation.fulfill()
         })
 
-        waitForExpectationsWithTimeout(10) { error in
+        waitForExpectations(withTimeout: 10) { error in
             if let error = error {
                 XCTFail(error.localizedDescription)
             }

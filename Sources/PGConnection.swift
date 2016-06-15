@@ -6,12 +6,13 @@
 
 import CoreFoundation
 import CLibpq
+import Dispatch
 
 let queueLabel = "com.ljodal.pgconnection"
 
-public enum PGError: ErrorType {
-    case ConnectionError(message: String)
-    case Other(message: String)
+public enum PGError: ErrorProtocol {
+    case connectionError(message: String)
+    case other(message: String)
 }
 
 /// This class represents a single connection to a database. One connection
@@ -19,13 +20,13 @@ public enum PGError: ErrorType {
 /// submited, they will be queued and executed in the order they are given.
 public class PGConnection: QueryExecutor {
 
-    let source: dispatch_source_t
-    let queue: dispatch_queue_t
+    let source: DispatchSourceRead
+    let queue: DispatchQueue
 
-    private let connection: COpaquePointer
+    private let connection: OpaquePointer
 
     // The queue of queries to be executed
-    private var queries: [(query: Query, onSuccess: (PGResult) -> (), onFailure: (ErrorType) -> ())] = []
+    private var queries: [(query: Query, onSuccess: (PGResult) -> (), onFailure: (ErrorProtocol) -> ())] = []
 
     // If a query is currently being executed
     private var working = false
@@ -34,47 +35,47 @@ public class PGConnection: QueryExecutor {
     private var pgError: String? {
         // Get the postgres connection and return a String. This will copy
         // the string, so we do not need to worry about managing the memory
-        return String.fromCString(PQerrorMessage(connection))
+        return String(cString: PQerrorMessage(connection))
     }
 
-    init(host: String, port: UInt16, database: String) throws {
+    init(host: String, port: UInt16, database: String, username: String) throws {
 
         // Open a connection to the database
         // TODO: Do this asynchronously
-        connection = PQconnectdb("postgresql://\(host):\(port)/\(database)")
+        connection = PQconnectdb("postgresql://\(username)@\(host):\(port)/\(database)")
 
         // Make sure we are connectied
         guard PQstatus(connection) == CONNECTION_OK else {
-            let msg = String.fromCString(PQerrorMessage(connection))
-            throw PGError.ConnectionError(message: msg != nil ? msg! : "Failed to connect")
+            let msg = String(cString: PQerrorMessage(connection))
+            throw PGError.connectionError(message: msg)
         }
 
         // Set the connection to non-blocking
         guard PQsetnonblocking(connection, 1) == 0 else {
-            let msg = String.fromCString(PQerrorMessage(connection))
-            throw PGError.Other(message: msg != nil ? msg! : "Failed to set non-blocking mode")
+            let msg = String(cString: PQerrorMessage(connection))
+            throw PGError.other(message: msg)
         }
 
         // Get the underlaying socket for the postgres connection
         let fd = PQsocket(connection)
         guard fd >= 0 else {
-            let msg = String.fromCString(PQerrorMessage(connection))
-            throw PGError.Other(message: msg != nil ? msg! : "Failed to get socket")
+            let msg = String(cString: PQerrorMessage(connection))
+            throw PGError.other(message: msg)
         }
 
-        self.queue = dispatch_queue_create(queueLabel, DISPATCH_QUEUE_SERIAL)
-        self.source = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, UInt(fd), 0, self.queue)
+        self.queue = DispatchQueue(label: queueLabel, attributes: DispatchQueueAttributes.serial)
+        self.source = DispatchSource.read(fileDescriptor: fd, queue: self.queue)
 
         // Set event handlers on the dispatch source
-        dispatch_source_set_event_handler(self.source, self.handleEvent)
-        dispatch_source_set_cancel_handler(self.source, {
+        self.source.setEventHandler(handler: self.handleEvent)
+        self.source.setCancelHandler(handler: {
 
             // TODO: Clean up postgresql connection
 
             print("Cancel handler called")
 
         })
-        dispatch_resume(self.source)
+        self.source.resume()
     }
 
 
@@ -83,11 +84,11 @@ public class PGConnection: QueryExecutor {
     ///
     /// If the executor is not able to process the query at this moment,
     /// the onFailure callback should be called immediately.
-    public func execute(query: Query, onSuccess: (PGResult) -> (), onFailure: (ErrorType) -> ()) {
+    public func execute(_ query: Query, onSuccess: (PGResult) -> (), onFailure: (ErrorProtocol) -> ()) {
 
         // Add the query to the queue
-        dispatch_async(self.queue, {
-            self.queries.insert((query: query, onSuccess: onSuccess, onFailure: onFailure), atIndex: 0)
+        self.queue.async(execute: {
+            self.queries.insert((query: query, onSuccess: onSuccess, onFailure: onFailure), at: 0)
             self.sendQuery()
         })
 
@@ -118,8 +119,8 @@ public class PGConnection: QueryExecutor {
         }
 
         // Failed to start query, send error message
-        let msg = String.fromCString(PQerrorMessage(connection))
-        q.onFailure(PGError.Other(message: msg != nil ? msg! : "Failed to send query"))
+        let msg = String(cString: PQerrorMessage(connection))
+        q.onFailure(PGError.other(message: msg))
 
         // Try next query
         self.sendQuery()
@@ -135,12 +136,8 @@ public class PGConnection: QueryExecutor {
 
         // Make sure all available data is consumed
         guard PQconsumeInput(connection) == 1 else {
-            let msg = String.fromCString(PQerrorMessage(connection))
-            if msg != nil {
-                print(msg)
-            } else {
-                print("Consume input failed")
-            }
+            let msg = String(cString: PQerrorMessage(connection))
+            print(msg)
             return
         }
 
@@ -155,7 +152,7 @@ public class PGConnection: QueryExecutor {
             let result = PQgetResult(connection)
             guard result != nil else {
                 print("Null-result")
-                self.queries.popLast()
+                _ = self.queries.popLast()
                 self.working = false
                 self.sendQuery()
                 return
@@ -164,11 +161,11 @@ public class PGConnection: QueryExecutor {
             let status = PQresultStatus(result)
             guard status == PGRES_COMMAND_OK || status == PGRES_TUPLES_OK else {
                 let msg = pgError
-                queries.last!.onFailure(PGError.Other(message: msg != nil ? msg! : "Query failed"))
+                queries.last!.onFailure(PGError.other(message: msg != nil ? msg! : "Query failed"))
                 continue
             }
 
-            self.queries.last!.onSuccess(PGResult(result))
+            self.queries.last!.onSuccess(PGResult(result!))
         }
 
         // TODO: Check if we can read data from the postgresql connection
@@ -181,6 +178,6 @@ public class PGConnection: QueryExecutor {
 
         print("Deinit called")
 
-        dispatch_source_cancel(self.source)
+        self.source.cancel()
     }
 }

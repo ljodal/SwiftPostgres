@@ -3,7 +3,7 @@ import CLibpq
 // Byte order swapping
 import CoreFoundation
 
-private func ntoh(oid: Oid) -> Oid {
+private func ntoh(_ oid: Oid) -> Oid {
     switch sizeof(Oid) {
     case 2:
         return Oid(ntoh(Int16(oid)))
@@ -16,32 +16,32 @@ private func ntoh(oid: Oid) -> Oid {
     }
 }
 
-private func ntoh(int: Int16) -> Int16 {
+private func ntoh(_ int: Int16) -> Int16 {
     return Int16(bitPattern: CFSwapInt16BigToHost(UInt16(bitPattern: int)))
 }
 
-private func ntoh(int: Int32) -> Int32 {
+private func ntoh(_ int: Int32) -> Int32 {
     return Int32(bitPattern: CFSwapInt32BigToHost(UInt32(bitPattern: int)))
 }
 
-private func ntoh(int: Int64) -> Int64 {
+private func ntoh(_ int: Int64) -> Int64 {
     return Int64(bitPattern: CFSwapInt64BigToHost(UInt64(bitPattern: int)))
 }
 
-private func popcount(num: Int32) -> Int32 {
+private func popcount(_ num: Int32) -> Int32 {
     var i = num
     i = i - ((i >> 1) & 0x55555555);
     i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
     return (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
 }
 
-private func decodeArray(data: UnsafePointer<Int8>, _ size: Int) -> [Int?] {
+private func decodeArray(_ data: UnsafePointer<Int8>, _ size: Int) -> [Int?] {
 
     let dim = Int(ntoh(UnsafePointer<Int32>(data)[0]))
-    let offset = Int(ntoh(UnsafePointer<Int32>(data.advancedBy(4))[0]))
-    let oid = Int(ntoh(UnsafePointer<Oid>(data.advancedBy(8))[0]))
-    let elems = Int(ntoh(UnsafePointer<Int32>(data.advancedBy(8 + sizeof(Oid)))[0]))
-    let index = Int(ntoh(UnsafePointer<Int32>(data.advancedBy(12 + sizeof(Oid)))[0]))
+    let offset = Int(ntoh(UnsafePointer<Int32>(data.advanced(by: 4))[0]))
+    let oid = Int(ntoh(UnsafePointer<Oid>(data.advanced(by: 8))[0]))
+    let elems = Int(ntoh(UnsafePointer<Int32>(data.advanced(by: 8 + sizeof(Oid)))[0]))
+    let index = Int(ntoh(UnsafePointer<Int32>(data.advanced(by: 12 + sizeof(Oid)))[0]))
 
     // TODO: Is the bitmap not included?
     //let nulls = ntoh(UnsafePointer<Int32>(data.advancedBy(16 + sizeof(Oid)))[0])
@@ -61,7 +61,7 @@ private func decodeArray(data: UnsafePointer<Int8>, _ size: Int) -> [Int?] {
     var result: [Int?] = []
 
     while i < size {
-        let ptr = UnsafePointer<Int32>(data.advancedBy(i))
+        let ptr = UnsafePointer<Int32>(data.advanced(by: i))
         let itemSize = ntoh(ptr[0])
 
         // If size if -1, this value is null
@@ -100,10 +100,10 @@ extension PGRow : Row {
         let value: RawData = self[index]
 
         switch (value) {
-        case let .Text(data):
+        case let .text(data):
             return data
-        case let .Binary(data, size):
-            return String.fromCString(data)
+        case let .binary(data, _):
+            return String(cString: data)
         default:
             fatalError("Unable to decode value")
         }
@@ -113,11 +113,11 @@ extension PGRow : Row {
         let value: RawData = self[index]
 
         switch (value) {
-        case .Nil:
+        case .null:
             return nil
-        case let .Text(data):
+        case let .text(data):
             return Int(data, radix: 10)
-        case let .Binary(data, size):
+        case let .binary(data, size):
             switch (size) {
             case 2:
                 return Int(ntoh(UnsafePointer<Int16>(data)[0]))
@@ -135,9 +135,9 @@ extension PGRow : Row {
         let value: RawData = self[index]
 
         switch (value) {
-        case let .Text(data):
+        case let .text(data):
             return Int(data, radix: 10)!
-        case let .Binary(data, size):
+        case let .binary(data, size):
             switch (size) {
             case 2:
                 return Int(ntoh(UnsafePointer<Int16>(data)[0]))
@@ -148,7 +148,7 @@ extension PGRow : Row {
             default:
                 fatalError("Unsupported integer size: \(size)")
             }
-        case .Nil:
+        case .null:
             fatalError("Value is nil")
         }
     }
@@ -157,7 +157,7 @@ extension PGRow : Row {
         let value: RawData = self[index]
 
         switch value {
-        case let .Binary(data, size):
+        case let .binary(data, size):
             return decodeArray(data, size)
         default:
             fatalError("Not binary")
@@ -172,14 +172,14 @@ extension PGRow : Row {
         let null = PQgetisnull(result.result, Int32(self.index), Int32(index))
 
         guard null == 0 else {
-            return RawData.Nil()
+            return RawData.null()
         }
 
         switch (format) {
         case 0: // Text
-            return RawData.Text(data: String.fromCString(value)!)
+            return RawData.text(data: String(cString: value!))
         case 1: // Binary
-            return RawData.Binary(data: value, size: Int(size))
+            return RawData.binary(data: value!, size: Int(size))
         default:
             fatalError("Unsupported data format")
         }
@@ -189,13 +189,13 @@ extension PGRow : Row {
 
 public class PGResult {
 
-    private let result: COpaquePointer
+    private let result: OpaquePointer
 
     public lazy var columns: Int = Int(PQnfields(self.result))
     public lazy var count: Int =  Int(PQntuples(self.result))
     public lazy var columnNames: [String] = self.getColumnNames()
 
-    init(_ result: COpaquePointer) {
+    init(_ result: OpaquePointer) {
         self.result = result
     }
 
@@ -203,21 +203,16 @@ public class PGResult {
     /// to lazy load the column names array
     private func getColumnNames() -> [String] {
         return (0..<count).map { i in
-            let name = String.fromCString(PQfname(result, Int32(i)))
-
-            guard name != nil else {
-                fatalError("Unable to get name for column \(i)")
-            }
-
-            return name!
+            // TODO: If there are invalid UTF-8 characters, these are ignored
+            return String(cString: PQfname(result, Int32(i)))
         }
     }
 
     /// Get the PG Oid of the column at the given index
-    public func oid(index: Int) throws -> Oid {
+    public func oid(_ index: Int) throws -> Oid {
 
         guard 0..<columns ~= index else {
-            throw PGError.Other(message: "Column \(index) is out of range: 0..<\(columns)")
+            throw PGError.other(message: "Column \(index) is out of range: 0..<\(columns)")
         }
 
         return PQftype(self.result, Int32(index))
@@ -234,7 +229,8 @@ public class PGResult {
 
 extension PGResult : Result {
 
-    public subscript(index: Int) -> PGRow {
+
+    public subscript(_ index: Int) -> PGRow {
         guard index < count else {
             fatalError("Index out of bounds: \(index)")
         }
@@ -242,8 +238,16 @@ extension PGResult : Result {
         return PGRow(self, index)
     }
 
-    public func generate() -> IndexingGenerator<PGResult> {
-        return IndexingGenerator(self)
+    public subscript(_ range: Range<Int>) -> PGResult {
+        fatalError()
+    }
+
+    public func index(after i: Int) -> Int {
+        return i + 1
+    }
+
+    public func makeIterator() -> IndexingIterator<PGResult> {
+        return IndexingIterator(_elements: self)
     }
 
     public var startIndex: Int {
